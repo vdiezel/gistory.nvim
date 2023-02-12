@@ -1,12 +1,7 @@
 local M = {}
 
-local default_config = {
-  default_branch = 'main',
-  split_command = 'vsplit'  -- ['split', 'vsplit']
-}
-
-M.setup = function(opts)
-  M.config = vim.tbl_deep_extend('force', default_config, opts or {})
+M.set_config = function(config)
+  M.config = config
 end
 
 M.open_gistory_default = function()
@@ -67,7 +62,6 @@ M.open_gistory = function(branch)
   local filetype = vim.bo.filetype
 
   vim.api.nvim_command(M.config.split_command)
-  print(M.config.split_command)
 
   local win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(win, buffer)
