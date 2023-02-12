@@ -12,38 +12,40 @@ local function trim_whitespaces(s)
   return s:match'^()%s*$' and '' or s:match'^%s*(.*%S)'
 end
 
-local function get_git_file_path()
-  local handle_git_root = io.popen('git rev-parse --show-toplevel')
+local system_command = function(commands)
+  local result = vim.fn.system(commands)
 
-  if handle_git_root == nil then
-    return
+  -- dont know enough if this is a good method for catching errors
+  if vim.api.nvim_get_vvar("shell_error") ~= 0 then
+    return false, '', result
   end
 
-  local git_root = trim_whitespaces(handle_git_root:read('*a'))
-  local abs_file_path = vim.fn.expand('%')
-
-  return '.' .. abs_file_path:gsub(git_root, '')
+  return true, result, ''
 end
 
-M.open_gistory = function(branch)
-  local command = 'git show ' .. branch ..':' .. get_git_file_path()
-  local handle = io.popen(command)
+local function get_git_file_path()
+  local success, git_root, error = system_command({ 'git', 'rev-parse', '--show-toplevel' })
 
-  if (handle == nil) then
-    return
+  if not success then
+    return success, git_root, error
   end
 
-  local output = handle:read("*a")
+  local git_root_trimmed = trim_whitespaces(git_root)
+  local abs_file_path = vim.fn.expand('%')
 
+  return success, '.' .. abs_file_path:gsub(git_root_trimmed, ''), error
+end
+
+local render = function(diff)
   local lines = {}
-  local totalLines = 0
 
-  for line in output:gmatch("([^\n]*)\n?") do
+  for line in diff:gmatch("([^\n]*)\n?") do
     table.insert(lines, line)
-    totalLines = totalLines + 1
   end
 
   -- to remove additional empty line at the end
+  -- coming from splitting the diff into lines
+  -- when the last line ends with a new line character)
   local removedLine = table.remove(lines)
 
   -- in case the file was missing a new line character at the end
@@ -54,8 +56,6 @@ M.open_gistory = function(branch)
   end
 
   local buffer = vim.api.nvim_create_buf(true, true)
-
-  -- this still adds an empty line at the end of the buffer ...
   vim.api.nvim_buf_set_lines(buffer, 0, -1, true, lines)
 
   -- preserve filetype to get syntax highlighting
@@ -69,6 +69,24 @@ M.open_gistory = function(branch)
   vim.api.nvim_buf_set_option(buffer, "bufhidden", 'wipe')
   vim.api.nvim_buf_set_option(buffer, "modifiable", false)
   vim.api.nvim_command('setfiletype ' .. filetype)
+end
+
+M.open_gistory = function(branch)
+  local ok_git_file_name, file_name, error = get_git_file_path()
+
+  if not ok_git_file_name then
+    vim.api.nvim_echo({{ "Looking for git file failed: " .. error }}, false, {})
+    return
+  end
+
+  local ok_diff, diff, error = system_command({ "git", "show", branch .. ':' .. file_name })
+
+  if not ok_diff then
+    vim.api.nvim_echo({{ "Showing diff failed: " .. error }}, false, {})
+    return
+  end
+
+  render(diff)
 end
 
 return M
